@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "Self-hosted webhook and CSV sync engine for Notion and REST APIs"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.2,<4"]
+
 [project.scripts]
 syncbridge = "syncbridge.cli:main"
 

@@ -18,6 +18,15 @@ docker compose up --build
 curl http://localhost:8080/health
 ```
 
+Native installation is also available:
+
+```bash
+./install.sh                 # Linux/macOS
+.\install.ps1               # Windows PowerShell
+syncbridge import-csv customers.csv --map config/field-map.example.json
+syncbridge watch-csv ./incoming --interval 10
+```
+
 Sign a webhook body with HMAC-SHA256 using `SYNCBRIDGE_WEBHOOK_SECRET`, then send:
 
 ```bash
@@ -31,6 +40,10 @@ curl -X POST http://localhost:8080/webhooks/crm \
 The worker persists the event before delivery. Duplicate source/key pairs do not
 create another event. Failed deliveries retry with bounded exponential backoff
 and enter `dead` after five attempts.
+
+Set `NOTION_KEY_PROPERTY` to query and update an existing Notion page instead of
+creating duplicates. Set `DATABASE_URL=postgresql://...` and install the
+`postgres` extra for multi-worker deployments using `FOR UPDATE SKIP LOCKED`.
 
 ## Security boundary
 
@@ -59,7 +72,5 @@ HMAC 验签和受保护监控指标。
 
 ## Roadmap / 下一里程碑
 
-- CSV directory watcher and field-map configuration
-- Notion schema discovery and update/upsert support
-- PostgreSQL backend for multi-worker deployments
-- Signed release archives and reproducible installers
+- Validate Notion create/update against an owner-provided test workspace
+- Validate Docker Compose startup and outbound delivery in a deployed environment

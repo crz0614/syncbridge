@@ -7,5 +7,23 @@ services:
     volumes: ["syncbridge-data:/data"]
     read_only: true
     tmpfs: ["/tmp"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_USER: syncbridge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: syncbridge
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U syncbridge"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
 volumes:
   syncbridge-data:
+  postgres-data:

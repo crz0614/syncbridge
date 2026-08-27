@@ -10,12 +10,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from .adapters import send_notion, send_rest
+from .mapping import FieldMap
+from .postgres_store import PostgresStore
 from .store import Store
 
 
 class Runtime:
     def __init__(self):
-        self.store = Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
+        dsn = os.getenv("DATABASE_URL", "")
+        self.store = PostgresStore(dsn) if dsn.startswith(("postgres://", "postgresql://")) else Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
+        self.mapper = FieldMap.from_file(os.getenv("SYNCBRIDGE_FIELD_MAP"))
         self.api_token = os.environ["SYNCBRIDGE_API_TOKEN"]
         self.webhook_secret = os.environ["SYNCBRIDGE_WEBHOOK_SECRET"]
         self.stop = threading.Event()
@@ -23,7 +27,7 @@ class Runtime:
     def deliver(self, payload: dict):
         kind = os.getenv("SYNCBRIDGE_DESTINATION", "rest")
         if kind == "notion":
-            send_notion(os.environ["NOTION_DATABASE_ID"], os.environ["NOTION_TOKEN"], payload)
+            send_notion(os.environ["NOTION_DATABASE_ID"], os.environ["NOTION_TOKEN"], payload, os.getenv("NOTION_KEY_PROPERTY"))
         else:
             send_rest(os.environ["DESTINATION_URL"], os.getenv("DESTINATION_TOKEN", ""), payload)
 
@@ -34,7 +38,8 @@ class Runtime:
                 self.stop.wait(1)
                 continue
             try:
-                self.deliver(json.loads(event["payload"]))
+                raw = event["payload"]
+                self.deliver(self.mapper.apply(json.loads(raw) if isinstance(raw, str) else raw))
                 self.store.finish(event["id"])
             except Exception as exc:
                 self.store.fail(event["id"], event["attempts"] + 1, str(exc))
