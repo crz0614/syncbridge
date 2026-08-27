@@ -1,12 +1,41 @@
 import argparse
+import json
+import os
 
 from .app import serve
+from .csv_ingest import import_csv, watch_directory
+from .mapping import FieldMap
+from .postgres_store import PostgresStore
+from .store import Store
+
+
+def configured_store():
+    dsn = os.getenv("DATABASE_URL", "")
+    return PostgresStore(dsn) if dsn.startswith(("postgres://", "postgresql://")) else Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
 
 
 def main():
     parser = argparse.ArgumentParser(prog="syncbridge")
-    parser.add_argument("serve", nargs="?")
-    parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=8080)
+    sub = parser.add_subparsers(dest="command", required=True)
+    serve_cmd = sub.add_parser("serve")
+    serve_cmd.add_argument("--host", default="0.0.0.0")
+    serve_cmd.add_argument("--port", type=int, default=8080)
+    import_cmd = sub.add_parser("import-csv")
+    import_cmd.add_argument("path")
+    import_cmd.add_argument("--source", default="csv")
+    import_cmd.add_argument("--map")
+    watch_cmd = sub.add_parser("watch-csv")
+    watch_cmd.add_argument("directory")
+    watch_cmd.add_argument("--interval", type=int, default=10)
+    watch_cmd.add_argument("--map")
     args = parser.parse_args()
-    serve(args.host, args.port)
+    if args.command == "serve":
+        serve(args.host, args.port)
+    elif args.command == "import-csv":
+        print(json.dumps(import_csv(configured_store(), args.path, args.source, FieldMap.from_file(args.map))))
+    else:
+        watch_directory(configured_store(), args.directory, args.interval, FieldMap.from_file(args.map))
+
+
+if __name__ == "__main__":
+    main()
