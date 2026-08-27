@@ -1,0 +1,11 @@
+services:
+  syncbridge:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    ports: ["8080:8080"]
+    volumes: ["syncbridge-data:/data"]
+    read_only: true
+    tmpfs: ["/tmp"]
+volumes:
+  syncbridge-data:
