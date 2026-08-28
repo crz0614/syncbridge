@@ -41,6 +41,12 @@ The worker persists the event before delivery. Duplicate source/key pairs do not
 create another event. Failed deliveries retry with bounded exponential backoff
 and enter `dead` after five attempts.
 
+`/health` reports the active storage backend (`sqlite` or `postgres`), the
+selected destination adapter and whether its required configuration is present.
+It never returns credentials. This makes container and production checks detect
+an accidentally unconfigured destination instead of reporting a misleading
+SQLite-only status.
+
 Set `NOTION_KEY_PROPERTY` to query and update an existing Notion page instead of
 creating duplicates. Set `DATABASE_URL=postgresql://...` and install the
 `postgres` extra for multi-worker deployments using `FOR UPDATE SKIP LOCKED`.

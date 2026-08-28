@@ -18,11 +18,26 @@ from .store import Store
 class Runtime:
     def __init__(self):
         dsn = os.getenv("DATABASE_URL", "")
-        self.store = PostgresStore(dsn) if dsn.startswith(("postgres://", "postgresql://")) else Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
+        self.storage_backend = "postgres" if dsn.startswith(("postgres://", "postgresql://")) else "sqlite"
+        self.store = PostgresStore(dsn) if self.storage_backend == "postgres" else Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
         self.mapper = FieldMap.from_file(os.getenv("SYNCBRIDGE_FIELD_MAP"))
         self.api_token = os.environ["SYNCBRIDGE_API_TOKEN"]
         self.webhook_secret = os.environ["SYNCBRIDGE_WEBHOOK_SECRET"]
         self.stop = threading.Event()
+
+    def health(self) -> dict:
+        destination = os.getenv("SYNCBRIDGE_DESTINATION", "rest")
+        configured = (
+            bool(os.getenv("NOTION_DATABASE_ID") and os.getenv("NOTION_TOKEN"))
+            if destination == "notion"
+            else bool(os.getenv("DESTINATION_URL"))
+        )
+        return {
+            "status": "ok",
+            "database": self.storage_backend,
+            "destination": destination,
+            "destination_configured": configured,
+        }
 
     def deliver(self, payload: dict):
         kind = os.getenv("SYNCBRIDGE_DESTINATION", "rest")
@@ -66,7 +81,7 @@ def handler(runtime: Runtime):
         def do_GET(self):
             path = urlparse(self.path).path
             if path == "/health":
-                return self.json(200, {"status": "ok", "database": "sqlite"})
+                return self.json(200, runtime.health())
             if path == "/metrics":
                 if not self.authorized():
                     return self.json(401, {"error": "unauthorized"})
