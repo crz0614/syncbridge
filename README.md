@@ -18,6 +18,11 @@ docker compose up --build
 curl http://localhost:8080/health
 ```
 
+Open `http://localhost:8080` for the operator console. Enter
+`SYNCBRIDGE_API_TOKEN` to inspect delivery health, review recent events and retry
+dead-letter deliveries. The token stays in the browser session only; event
+payloads and destination credentials are never returned by the console API.
+
 Native installation is also available:
 
 ```bash
@@ -72,6 +77,10 @@ SyncBridge 是可下载、自托管的业务数据同步工具，面向外包中
 CRM、ERP、Notion 和通用 API 同步需求。它先把 Webhook 数据持久化到
 SQLite，再执行目标系统投递；支持幂等去重、指数退避重试、死信状态、
 HMAC 验签和受保护监控指标。
+
+启动后访问 `http://localhost:8080` 即可使用运维界面，查看投递状态、最近事件和
+失败原因，并可手动重试死信任务。界面使用操作员令牌认证，不会返回事件正文或
+目标系统凭据。
 
 项目不包含虚构客户、订单或收入数据。Notion 端到端验证必须使用仓库所有者
 提供的真实测试工作区凭据；未完成该验证前不会加入公开作品集。

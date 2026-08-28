@@ -64,3 +64,17 @@ class PostgresStore:
     def stats(self):
         with self.connect() as db:
             return {r["status"]: r["n"] for r in db.execute("SELECT status,COUNT(*) n FROM syncbridge_events GROUP BY status")}
+
+    def list_events(self, limit: int = 100):
+        limit = max(1, min(int(limit), 500))
+        with self.connect() as db:
+            return list(db.execute("""SELECT id,source,idempotency_key,status,attempts,last_error,
+                created_at,updated_at FROM syncbridge_events ORDER BY id DESC LIMIT %s""", (limit,)))
+
+    def retry(self, event_id: int) -> bool:
+        now = int(time.time())
+        with self.connect() as db:
+            result = db.execute("""UPDATE syncbridge_events SET status='retry',next_attempt_at=%s,
+                last_error=NULL,updated_at=%s WHERE id=%s AND status IN ('dead','retry')""",
+                (now, now, event_id))
+            return result.rowcount == 1

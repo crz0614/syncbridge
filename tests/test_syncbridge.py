@@ -4,7 +4,8 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.request import urlopen
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 from http.server import ThreadingHTTPServer
 
 from syncbridge.app import handler
@@ -42,6 +43,17 @@ class StoreTests(unittest.TestCase):
         self.store.fail(event_id, 5, "destination unavailable")
         self.assertEqual({"dead": 1}, self.store.stats())
 
+    def test_list_and_operator_retry(self):
+        event_id, _ = self.store.ingest("crm", "retry-me", {"id": 2})
+        self.store.claim()
+        self.store.fail(event_id, 5, "destination unavailable")
+        events = self.store.list_events()
+        self.assertEqual(event_id, events[0]["id"])
+        self.assertEqual("dead", events[0]["status"])
+        self.assertNotIn("payload", events[0])
+        self.assertTrue(self.store.retry(event_id))
+        self.assertEqual({"retry": 1}, self.store.stats())
+
     def test_field_map_rejects_non_string_rules(self):
         path = Path(self.tmp.name) / "map.json"
         path.write_text('{"source": 1}', encoding="utf-8")
@@ -78,6 +90,39 @@ class HealthTests(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+    def test_dashboard_events_require_auth_and_dead_event_can_be_retried(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(f"{directory}/dashboard.db")
+            event_id, _ = store.ingest("crm", "failed", {"private": "not returned"})
+            store.claim()
+            store.fail(event_id, 5, "temporary failure")
+            runtime = SimpleNamespace(
+                api_token="operator-token",
+                store=store,
+                health=lambda: {"status": "ok"},
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler(runtime))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_port}"
+            try:
+                with urlopen(base + "/") as response:
+                    self.assertIn("SyncBridge Console", response.read().decode())
+                with self.assertRaises(HTTPError) as denied:
+                    urlopen(base + "/api/events")
+                self.assertEqual(401, denied.exception.code)
+                headers = {"Authorization": "Bearer operator-token"}
+                with urlopen(Request(base + "/api/events", headers=headers)) as response:
+                    body = json.load(response)
+                self.assertEqual("dead", body["events"][0]["status"])
+                self.assertNotIn("payload", body["events"][0])
+                retry = Request(base + f"/api/events/{event_id}/retry", headers=headers, method="POST")
+                with urlopen(retry) as response:
+                    self.assertEqual("retry", json.load(response)["status"])
+            finally:
+                server.shutdown()
+                server.server_close()
 
 
 if __name__ == "__main__":

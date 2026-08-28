@@ -99,3 +99,22 @@ class Store:
             return {r["status"]: r["n"] for r in db.execute(
                 "SELECT status,COUNT(*) n FROM events GROUP BY status"
             )}
+
+    def list_events(self, limit: int = 100):
+        limit = max(1, min(int(limit), 500))
+        with self.connect() as db:
+            return [dict(row) for row in db.execute(
+                """SELECT id,source,idempotency_key,status,attempts,last_error,
+                created_at,updated_at FROM events ORDER BY id DESC LIMIT ?""",
+                (limit,),
+            )]
+
+    def retry(self, event_id: int) -> bool:
+        now = int(time.time())
+        with self.connect() as db:
+            cursor = db.execute(
+                """UPDATE events SET status='retry',next_attempt_at=?,last_error=NULL,
+                updated_at=? WHERE id=? AND status IN ('dead','retry')""",
+                (now, now, event_id),
+            )
+            return cursor.rowcount == 1

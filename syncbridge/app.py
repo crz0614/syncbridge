@@ -8,6 +8,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
+from importlib.resources import files
 
 from .adapters import send_notion, send_rest
 from .mapping import FieldMap
@@ -73,6 +74,17 @@ def handler(runtime: Runtime):
             self.end_headers()
             self.wfile.write(body)
 
+        def html(self, body: str):
+            encoded = body.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Frame-Options", "DENY")
+            self.end_headers()
+            self.wfile.write(encoded)
+
         def authorized(self):
             return hmac.compare_digest(
                 self.headers.get("Authorization", ""), f"Bearer {runtime.api_token}"
@@ -80,8 +92,14 @@ def handler(runtime: Runtime):
 
         def do_GET(self):
             path = urlparse(self.path).path
+            if path == "/":
+                return self.html(files("syncbridge").joinpath("dashboard.html").read_text(encoding="utf-8"))
             if path == "/health":
                 return self.json(200, runtime.health())
+            if path == "/api/events":
+                if not self.authorized():
+                    return self.json(401, {"error": "unauthorized"})
+                return self.json(200, {"events": runtime.store.list_events(), "stats": runtime.store.stats()})
             if path == "/metrics":
                 if not self.authorized():
                     return self.json(401, {"error": "unauthorized"})
@@ -97,6 +115,16 @@ def handler(runtime: Runtime):
 
         def do_POST(self):
             path = urlparse(self.path).path
+            if path.startswith("/api/events/") and path.endswith("/retry"):
+                if not self.authorized():
+                    return self.json(401, {"error": "unauthorized"})
+                try:
+                    event_id = int(path.split("/")[3])
+                except (ValueError, IndexError):
+                    return self.json(400, {"error": "invalid_event_id"})
+                if not runtime.store.retry(event_id):
+                    return self.json(409, {"error": "event_not_retryable"})
+                return self.json(202, {"id": event_id, "status": "retry"})
             if not path.startswith("/webhooks/"):
                 return self.json(404, {"error": "not_found"})
             length = int(self.headers.get("Content-Length", "0"))
