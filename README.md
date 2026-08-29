@@ -28,9 +28,14 @@ Native installation is also available:
 ```bash
 ./install.sh                 # Linux/macOS
 .\install.ps1               # Windows PowerShell
-syncbridge import-csv customers.csv --map config/field-map.example.json
-syncbridge watch-csv ./incoming --interval 10
+.venv/bin/syncbridge init    # Linux/macOS secure setup; creates .env
+.venv/bin/syncbridge import-csv customers.csv --map config/field-map.example.json
+.venv/bin/syncbridge watch-csv ./incoming --interval 10
 ```
+
+On Windows, replace `.venv/bin/syncbridge` with
+`.\.venv\Scripts\syncbridge.exe`. The installer preserves an existing `.env`
+and never creates a world-readable placeholder configuration.
 
 Sign a webhook body with HMAC-SHA256 using `SYNCBRIDGE_WEBHOOK_SECRET`, then send:
 
