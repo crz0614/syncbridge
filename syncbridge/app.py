@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -127,7 +128,13 @@ def handler(runtime: Runtime):
                 return self.json(202, {"id": event_id, "status": "retry"})
             if not path.startswith("/webhooks/"):
                 return self.json(404, {"error": "not_found"})
-            length = int(self.headers.get("Content-Length", "0"))
+            source = path.removeprefix("/webhooks/")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", source):
+                return self.json(400, {"error": "invalid_source"})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return self.json(400, {"error": "invalid_content_length"})
             if length <= 0 or length > 1_000_000:
                 return self.json(413, {"error": "invalid_size"})
             raw = self.rfile.read(length)
@@ -140,8 +147,9 @@ def handler(runtime: Runtime):
                     raise ValueError
             except (json.JSONDecodeError, ValueError):
                 return self.json(400, {"error": "invalid_json"})
-            source = path.removeprefix("/webhooks/")
             key = self.headers.get("Idempotency-Key") or hashlib.sha256(raw).hexdigest()
+            if not re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", key):
+                return self.json(400, {"error": "invalid_idempotency_key"})
             event_id, created = runtime.store.ingest(source, key, payload)
             return self.json(202 if created else 200, {"id": event_id, "created": created})
 
