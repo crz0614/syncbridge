@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 import tempfile
 import threading
 import unittest
@@ -120,6 +122,52 @@ class HealthTests(unittest.TestCase):
                 retry = Request(base + f"/api/events/{event_id}/retry", headers=headers, method="POST")
                 with urlopen(retry) as response:
                     self.assertEqual("retry", json.load(response)["status"])
+            finally:
+                server.shutdown()
+                server.server_close()
+
+    def test_wordpress_enquiry_is_signed_persisted_and_deduplicated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(f"{directory}/wordpress.db")
+            runtime = SimpleNamespace(
+                api_token="operator-token",
+                webhook_secret="wordpress-secret-at-least-32-bytes",
+                store=store,
+                health=lambda: {"status": "ok"},
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), handler(runtime))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            body = json.dumps(
+                {
+                    "contact_name": "Ada Lovelace",
+                    "contact_email": "ada@example.test",
+                    "property_reference": "STAGING-42",
+                    "budget": "500000",
+                    "_source": {"site": "https://staging.example/", "integration": "wordpress"},
+                },
+                separators=(",", ":"),
+            ).encode()
+            signature = hmac.new(runtime.webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+            headers = {
+                "Content-Type": "application/json",
+                "Idempotency-Key": "enquiry-42",
+                "X-SyncBridge-Signature": signature,
+            }
+            url = f"http://127.0.0.1:{server.server_port}/webhooks/wordpress"
+            try:
+                with urlopen(Request(url, data=body, headers=headers, method="POST")) as response:
+                    first = json.load(response)
+                    self.assertEqual(202, response.status)
+                    self.assertTrue(first["created"])
+                with urlopen(Request(url, data=body, headers=headers, method="POST")) as response:
+                    duplicate = json.load(response)
+                    self.assertEqual(200, response.status)
+                    self.assertFalse(duplicate["created"])
+                self.assertEqual(first["id"], duplicate["id"])
+                event = store.claim()
+                self.assertEqual("wordpress", event["source"])
+                self.assertEqual("STAGING-42", json.loads(event["payload"])["property_reference"])
             finally:
                 server.shutdown()
                 server.server_close()
