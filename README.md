@@ -61,6 +61,20 @@ Set `NOTION_KEY_PROPERTY` to query and update an existing Notion page instead of
 creating duplicates. Set `DATABASE_URL=postgresql://...` and install the
 `postgres` extra for multi-worker deployments using `FOR UPDATE SKIP LOCKED`.
 
+## WordPress CRM connector
+
+An installable WordPress connector is included in
+[`integrations/wordpress/syncbridge-crm`](integrations/wordpress/syncbridge-crm).
+It captures Contact Form 7 or custom enquiry actions, sends only explicitly
+mapped fields over an HTTPS/HMAC webhook, preserves a stable idempotency key and
+retries transient failures with WP-Cron. This keeps an existing WordPress/XML
+listing pipeline isolated while adding a durable CRM handoff.
+
+仓库内含可安装的 WordPress CRM 连接器，支持 Contact Form 7 和自定义咨询 action。
+它只发送明确映射的字段，要求 HTTPS 与 HMAC 验签，并用相同幂等键通过 WP-Cron
+重试临时故障，因此可以在不改动现有主题、XML 导入或门户导出的情况下增加 CRM
+数据同步。
+
 ## Security boundary
 
 - Webhooks require an HMAC signature.
