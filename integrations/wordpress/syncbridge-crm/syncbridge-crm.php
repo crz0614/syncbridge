@@ -173,10 +173,19 @@ final class SyncBridge_CRM_Connector
         $payload['_source'] = ['site' => home_url('/'), 'integration' => 'wordpress'];
         $job = [
             'payload' => $payload,
-            'idempotency_key' => sanitize_key((string) ($idempotency_key ?: wp_generate_uuid4())),
+            'idempotency_key' => self::normalize_idempotency_key((string) ($idempotency_key ?: wp_generate_uuid4())),
             'attempt' => 1,
         ];
         self::deliver_or_schedule($job, $options);
+    }
+
+    private static function normalize_idempotency_key(string $key): string
+    {
+        $normalized = sanitize_key($key);
+        if ($normalized !== '' && strlen($normalized) <= 200) {
+            return $normalized;
+        }
+        return hash('sha256', $key);
     }
 
     private static function deliver_or_schedule(array $job, ?array $options = null): void
@@ -223,4 +232,3 @@ final class SyncBridge_CRM_Connector
 }
 
 SyncBridge_CRM_Connector::boot();
-
