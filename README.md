@@ -42,6 +42,11 @@ existing file untouched (including an existing symlink). New files use mode 0600
 on POSIX; on Windows, use a private user directory and restrict inherited ACLs.
 No generated secret is printed. Native commands load `.env` from the current
 directory; use `syncbridge --env-file /private/config.env serve` for another file.
+The implicit `.env` may be absent for environment-only deployments. An explicitly
+selected file must exist and be readable; missing files and dangling symlinks stop
+the command before opening storage. A non-empty `DATABASE_URL` must use
+`postgres://` or `postgresql://`; unsupported schemes fail rather than silently
+opening a different SQLite database. Unset/empty `DATABASE_URL` retains SQLite.
 Explicit process environment values take precedence, including empty values.
 The format is one literal `KEY=value` per line: optional matching outer quotes,
 blank lines and full-line `#` comments are supported. No shell execution, variable
@@ -59,6 +64,11 @@ that it is absent from the running image. Never add credentials to image layers.
 字面量 `KEY=value`、配对外层引号、空行和整行注释，不执行 shell、不展开变量，
 不支持多行值或行尾注释。重复/错误赋值会在加载前报错。接收数据前须配置真实
 目标。CI 在三个桌面操作系统中安装包并从临时目录执行真实命令验证。
+默认 `.env` 可缺省以支持纯环境变量部署；显式 `--env-file` 指定的文件不存在、
+不可读或为失效符号链接时，命令会在打开数据库前停止。非空 `DATABASE_URL`
+仅接受 PostgreSQL URL 前缀，错误类型不再静默切换为 SQLite；未设置或空值仍用 SQLite。
+升级前核对配置文件路径与数据库 URL。若旧版本曾误写入 SQLite，应先备份并核对
+实际记录，不要直接重放或删除；本修复不自动迁移数据。回滚后该保护将不再生效。
 Docker 构建同时排除本地密钥配置、Git 元数据、虚拟环境和默认数据目录；CI
 使用无敏感信息的 `.env` 标记文件确认它未进入镜像，不能将真实凭据烘焙进镜像。
 

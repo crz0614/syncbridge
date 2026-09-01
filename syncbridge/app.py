@@ -13,14 +13,15 @@ from importlib.resources import files
 
 from .adapters import send_notion, send_rest
 from .mapping import FieldMap
+from .config import database_url
 from .postgres_store import PostgresStore
 from .store import Store
 
 
 class Runtime:
     def __init__(self):
-        dsn = os.getenv("DATABASE_URL", "")
-        self.storage_backend = "postgres" if dsn.startswith(("postgres://", "postgresql://")) else "sqlite"
+        dsn = database_url()
+        self.storage_backend = "postgres" if dsn else "sqlite"
         self.store = PostgresStore(dsn) if self.storage_backend == "postgres" else Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
         self.mapper = FieldMap.from_file(os.getenv("SYNCBRIDGE_FIELD_MAP"))
         self.api_token = os.environ["SYNCBRIDGE_API_TOKEN"]
