@@ -8,6 +8,20 @@ permissions:
   contents: read
 
 jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install .
+      - run: python scripts/verify_native.py
+      - run: python -m unittest discover -s tests -p test_config.py -v
   python:
     runs-on: ubuntu-latest
     services:
@@ -38,6 +52,8 @@ jobs:
         run: php -l integrations/wordpress/syncbridge-crm/syncbridge-crm.php
       - name: Test WordPress connector boundaries
         run: php tests/test_wordpress_connector.php
+      - name: Add harmless build-context secret exclusion fixture
+        run: python -c "from pathlib import Path; Path('.env').write_text('SYNCBRIDGE_BUILD_SENTINEL=not-a-secret\n')"
       - run: docker build -t syncbridge:${{ github.sha }} .
       - name: Verify built container with PostgreSQL and REST delivery
         timeout-minutes: 3
