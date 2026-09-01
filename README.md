@@ -49,6 +49,9 @@ expansion, multiline values or inline comments. Duplicate/malformed assignments
 fail before any values are loaded. Set the real destination before accepting data.
 CI installs the package and exercises the installed command from a temporary
 directory on Linux, Windows and macOS, including `.env`-selected SQLite storage.
+Docker build context excludes local `.env`, Git metadata, virtual environments
+and the default data directory; CI includes a harmless `.env` fixture and checks
+that it is absent from the running image. Never add credentials to image layers.
 
 原生命令现实际支持 `init` 并自动读取当前目录的 `.env`；初始化生成两份独立
 随机密钥，不打印、不覆盖已有文件。POSIX 新文件权限为 0600；Windows 请使用
@@ -56,6 +59,8 @@ directory on Linux, Windows and macOS, including `.env`-selected SQLite storage.
 字面量 `KEY=value`、配对外层引号、空行和整行注释，不执行 shell、不展开变量，
 不支持多行值或行尾注释。重复/错误赋值会在加载前报错。接收数据前须配置真实
 目标。CI 在三个桌面操作系统中安装包并从临时目录执行真实命令验证。
+Docker 构建同时排除本地密钥配置、Git 元数据、虚拟环境和默认数据目录；CI
+使用无敏感信息的 `.env` 标记文件确认它未进入镜像，不能将真实凭据烘焙进镜像。
 
 Rollback requires no database migration: retain the `.env` and database, and
 explicitly supply process environment when reverting to a CLI without `.env`
