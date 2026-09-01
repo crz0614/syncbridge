@@ -80,6 +80,16 @@ listing pipeline isolated while adding a durable CRM handoff.
 - Webhooks require an HMAC signature.
 - Metrics require the operator bearer token.
 - Destination credentials come only from environment variables.
+- REST and Notion delivery refuse redirects (including same-host redirects).
+  Configure the final canonical API URL; HTTP failures persist only the status,
+  not redirect URLs or provider reason phrases. Existing bounded retry/dead-letter
+  handling applies. Use HTTPS for external destinations; local HTTP is only for
+  controlled development. To roll back, redeploy the previous image, but do not
+  restore redirect-following delivery with real credentials.
+- REST / Notion 外发请求拒绝重定向（包括同域跳转），防止授权令牌被转发。
+  请配置最终 API 地址；HTTP 错误仅记录状态码，不保存跳转地址或服务商原因文本。
+  失败继续走有限重试与死信流程。外部目标必须使用 HTTPS，本地 HTTP 仅供受控测试。
+  回滚可重新部署前一镜像，但不要携带真实凭据恢复自动跟随跳转。
 - The container runs as an unprivileged user with a read-only filesystem.
 - Payloads may contain customer data; do not expose the SQLite volume publicly.
 
