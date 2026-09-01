@@ -86,6 +86,33 @@ creating duplicates. Set `DATABASE_URL=postgresql://...` and install the
 
 ## WordPress CRM connector
 
+### CSV integrity / CSV 数据完整性
+
+CSV imports validate all records before the first queue write: empty/duplicate
+column names, short/extra-column records, invalid UTF-8 and malformed quotes are
+rejected without importing a valid prefix. Validation uses a temporary snapshot
+that spills to disk above 1 MiB; allow disk space for the decoded file and secure
+the host's temporary storage. Existing valid-file idempotency keys are unchanged.
+Blank lines, UTF-8 BOM, quoted commas and multiline values remain supported.
+
+This is format preflight, not an all-or-nothing database transaction. A database
+failure during ingestion may leave a committed prefix; retry the unchanged file
+at the same path with the same mapping/source to resume by deduplication. Do not
+modify an input while it is being read; producers must write a temporary file and
+atomically publish the finished `.csv`. Directory-watcher concurrency and archive
+collisions remain unverified. Rollback needs no schema migration but restores
+permissive parsing; keep the stricter input validation upstream if rolling back.
+
+CSV 会在首次写队列前校验整份文件，拒绝空/重复列名、缺列/多列、非法 UTF-8
+和错误引号，避免先导入前几行才发现坏行。临时快照超过 1 MiB 后落盘，部署时
+须保留足够临时磁盘空间并保护临时目录。合法旧文件的幂等键保持不变，继续支持
+BOM、空行、引号内逗号和多行文本。
+
+这仅保证格式预检，不是整个导入的数据库事务；入库期间故障可能已提交部分行，
+应在相同路径、映射和来源下重试原文件，利用去重续传。生产方必须先写临时文件，
+完成后原子发布为 `.csv`，不能边写边导入。目录监听并发与归档重名仍待验证。
+回滚无需迁移数据库，但会恢复宽松解析，须在上游保留严格校验。
+
 An installable WordPress connector is included in
 [`integrations/wordpress/syncbridge-crm`](integrations/wordpress/syncbridge-crm).
 It captures Contact Form 7 or custom enquiry actions, sends only explicitly
