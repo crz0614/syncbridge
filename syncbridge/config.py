@@ -25,12 +25,24 @@ def init_env(path: str = ".env") -> bool:
     return True
 
 
-def load_env(path: str = ".env") -> None:
+def database_url() -> str:
+    """Reject a configured unsupported backend instead of silently using SQLite."""
+    dsn = os.getenv("DATABASE_URL", "")
+    if dsn and not dsn.startswith(("postgres://", "postgresql://")):
+        raise ValueError("DATABASE_URL must use postgres:// or postgresql://")
+    return dsn
+
+
+def load_env(path: str = ".env", *, required: bool = False) -> None:
     file = Path(path)
-    if not file.exists():
-        return
     values = {}
-    with file.open(encoding="utf-8-sig") as handle:
+    try:
+        handle = file.open(encoding="utf-8-sig")
+    except FileNotFoundError:
+        if required or file.is_symlink():
+            raise
+        return
+    with handle:
         for number, line in enumerate(handle, 1):
             line = line.strip()
             if not line or line.startswith("#"):
