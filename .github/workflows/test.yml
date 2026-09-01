@@ -52,6 +52,8 @@ jobs:
         run: php -l integrations/wordpress/syncbridge-crm/syncbridge-crm.php
       - name: Test WordPress connector boundaries
         run: php tests/test_wordpress_connector.php
+      - name: Add harmless build-context secret exclusion fixture
+        run: python -c "from pathlib import Path; Path('.env').write_text('SYNCBRIDGE_BUILD_SENTINEL=not-a-secret\n')"
       - run: docker build -t syncbridge:${{ github.sha }} .
       - name: Verify built container with PostgreSQL and REST delivery
         timeout-minutes: 3
