@@ -150,6 +150,32 @@ python -m unittest discover -s tests -v
 docker compose config
 ```
 
+### Built-image PostgreSQL verification
+
+The Docker image installs the `postgres` extra, not just the base package.
+CI now starts that exact image as its non-root user with a read-only filesystem
+against disposable PostgreSQL, then checks database readiness, operator auth,
+HMAC rejection/acceptance, duplicate ingestion, one authenticated HTTP delivery
+and retained event state after container restart. The HTTP receiver is a local
+test fixture, **not** a WordPress site or third-party CRM sandbox.
+
+To reproduce on a Linux Docker host, set `DATABASE_URL` to a **disposable** test
+database and run `python scripts/verify_container.py IMAGE`. Host networking is
+used only by this CI smoke test to reach the temporary receiver/database; it does
+not change production Compose networking. Test records stay in the disposable
+database until it is discarded. The script removes only its uniquely named test
+container. No schema migration is introduced. Do not roll PostgreSQL deployments
+back to an old image lacking the driver; retain this dependency fix when rebuilding
+the preceding application version, and preserve the database/volume.
+
+镜像现安装 PostgreSQL 驱动，CI 不再仅验证“能构建”：实际以非 root、只读文件
+系统启动镜像，连接一次性 PostgreSQL，检查鉴权、HMAC、去重、真实 HTTP 测试
+接收端投递，以及重启后的记录持久化。这不是 WordPress→第三方 CRM 沙盒验收。
+复现需 Linux Docker 主机和一次性测试数据库，测试记录随该数据库销毁；脚本只
+清理自身创建的测试容器。宿主网络仅用于 CI 测试，不改变生产 Compose 网络。
+无需数据库迁移；回滚时保留驱动修复重新构建旧应用版本，并保留原数据库/卷，
+不要切回缺少驱动的旧镜像或以空 SQLite 数据库替代现有 PostgreSQL。
+
 ## 中文说明
 
 SyncBridge 是可下载、自托管的业务数据同步工具，面向外包中反复出现的
