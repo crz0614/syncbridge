@@ -61,7 +61,7 @@ function submitted_key(string $input): string
     return $syncbridge_requests[0]['args']['headers']['Idempotency-Key'];
 }
 
-$ordinary = submitted_key('Enquiry-42');
+$ordinary = submitted_key('enquiry-42');
 if ($ordinary !== 'enquiry-42') {
     throw new RuntimeException('Ordinary keys must retain their normalized value.');
 }
@@ -69,9 +69,36 @@ if ($ordinary !== 'enquiry-42') {
 foreach ([str_repeat('x', 201), '客户询盘编号'] as $unsafe) {
     $first = submitted_key($unsafe);
     $second = submitted_key($unsafe);
-    if (!preg_match('/^[a-f0-9]{64}$/', $first) || $first !== $second) {
+    if (!preg_match('/^wp2:[a-f0-9]{64}$/D', $first) || $first !== $second) {
         throw new RuntimeException('Unsafe keys must become stable bounded SHA-256 values.');
     }
+}
+
+foreach ([['A+B', 'AB'], ['Enquiry-42', 'enquiry-42'], ['客户42', '42'],
+          ['ab.c', 'abc'], ['a b', 'ab']] as [$first, $second]) {
+    if (submitted_key($first) === submitted_key($second)) {
+        throw new RuntimeException('Distinct business identifiers must not collapse.');
+    }
+}
+if (submitted_key('0') !== '0' || submitted_key(str_repeat('a', 200)) !== str_repeat('a', 200)) {
+    throw new RuntimeException('Zero and the maximum canonical key must be preserved.');
+}
+$hashed = submitted_key('客户询盘编号');
+if (submitted_key($hashed) === $hashed) {
+    throw new RuntimeException('Raw input must not impersonate the reserved hash namespace.');
+}
+foreach (['enquiry-42', 'Enquiry-42', '客户42', str_repeat('x', 201)] as $input) {
+    if (!preg_match('/^[A-Za-z0-9._:-]{1,200}$/D', submitted_key($input))) {
+        throw new RuntimeException('Generated keys must satisfy the backend contract.');
+    }
+}
+// Pending jobs contain their wire key; an upgrade must not re-normalize it.
+$syncbridge_requests = [];
+SyncBridge_CRM_Connector::retry_delivery([
+    'payload' => ['contact_name' => 'Ada'], 'idempotency_key' => 'legacy-normalized', 'attempt' => 2,
+]);
+if ($syncbridge_requests[0]['args']['headers']['Idempotency-Key'] !== 'legacy-normalized') {
+    throw new RuntimeException('Pending retries must retain the original wire key.');
 }
 
 echo "WordPress connector boundary tests passed.\n";

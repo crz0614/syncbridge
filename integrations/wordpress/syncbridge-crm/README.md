@@ -11,6 +11,34 @@ changing their existing theme, XML listing import or portal export pipeline.
 
 ## Install / 安装
 
+### Upgrade to 0.1.1 / 升级提示
+
+Version 0.1.1 prevents distinct enquiry IDs from collapsing after character
+removal or case folding. Canonical lowercase ASCII keys (`a-z`, `0-9`, `_`, `-`,
+1–200 bytes) stay unchanged, including `0`. Other nonempty keys use a reserved
+`wp2:` SHA-256 namespace. Empty IDs still get a generated UUID. Pending WP-Cron
+jobs keep their original wire key; retries do not normalize it again.
+
+Before upgrading or rolling back, pause new submissions, drain existing retries
+and keep the old delivery ledger. Do not replay already-submitted noncanonical
+IDs across versions: their new keys differ and could create a second delivery.
+If a replay is required, reconcile against the destination's business ID first.
+Previously collapsed records cannot be recovered from a hash; reconcile them
+with the original form records. This does not claim exactly-once CRM delivery.
+
+0.1.1 修复不同询盘编号因删除字符或大小写折叠而被误判为同一条的问题。
+规范小写 ASCII 键保持不变（包括 `0`）；其他非空键进入 `wp2:` SHA-256
+命名空间，空键仍生成 UUID。已排队的 WP-Cron 重试继续沿用旧键。
+升级或回滚前暂停新提交、处理完旧重试并保留投递台账；不要跨版本直接重放
+已提交的非规范编号，否则新键可能造成第二次投递。确需重放时先按 CRM 业务
+编号核对。历史误去重数据必须回查原表单记录，不能从哈希恢复。
+
+The standalone PHP tests cover collisions, zero, length boundaries, Unicode,
+reserved namespace separation and unchanged legacy retry keys. They use WordPress
+function doubles, not a running WordPress/CRM integration acceptance environment.
+PHP 独立测试覆盖碰撞、零值、长度、Unicode、命名空间和旧重试键；使用
+WordPress 函数替身，不代表真实 WordPress→CRM 端到端验收。
+
 1. Copy `syncbridge-crm` into `wp-content/plugins/` and activate it.
 2. Open **Settings → SyncBridge CRM**.
 3. Enter an HTTPS endpoint such as
@@ -78,4 +106,3 @@ do_action(
 Production CRM verification requires the owner-provided WordPress staging site,
 form names, SyncBridge URL and CRM sandbox credentials. No test result is claimed
 without those credentials.
-

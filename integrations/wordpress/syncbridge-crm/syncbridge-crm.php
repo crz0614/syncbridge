@@ -2,7 +2,7 @@
 /**
  * Plugin Name: SyncBridge CRM Connector
  * Description: Reliably forwards WordPress enquiries to a self-hosted SyncBridge endpoint.
- * Version: 0.1.0
+ * Version: 0.1.1
  * Requires at least: 6.4
  * Requires PHP: 8.1
  * License: MIT
@@ -171,9 +171,13 @@ final class SyncBridge_CRM_Connector
             return;
         }
         $payload['_source'] = ['site' => home_url('/'), 'integration' => 'wordpress'];
+        if (!is_string($idempotency_key) && !is_int($idempotency_key)) {
+            return;
+        }
+        $key = (string) $idempotency_key;
         $job = [
             'payload' => $payload,
-            'idempotency_key' => self::normalize_idempotency_key((string) ($idempotency_key ?: wp_generate_uuid4())),
+            'idempotency_key' => self::normalize_idempotency_key($key === '' ? wp_generate_uuid4() : $key),
             'attempt' => 1,
         ];
         self::deliver_or_schedule($job, $options);
@@ -181,11 +185,12 @@ final class SyncBridge_CRM_Connector
 
     private static function normalize_idempotency_key(string $key): string
     {
-        $normalized = sanitize_key($key);
-        if ($normalized !== '' && strlen($normalized) <= 200) {
-            return $normalized;
+        // Preserve canonical keys, but never strip characters or fold case.
+        if (preg_match('/^[a-z0-9_-]{1,200}$/D', $key)) {
+            return $key;
         }
-        return hash('sha256', $key);
+        // ':' is excluded above, so raw keys cannot impersonate a hashed key.
+        return 'wp2:' . hash('sha256', $key);
     }
 
     private static function deliver_or_schedule(array $job, ?array $options = null): void
