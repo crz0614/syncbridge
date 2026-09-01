@@ -119,7 +119,7 @@ def handler(runtime: Runtime):
 
         def authorized(self):
             return hmac.compare_digest(
-                self.headers.get("Authorization", ""), f"Bearer {runtime.api_token}"
+                self.headers.get("Authorization", "").encode("utf-8"), f"Bearer {runtime.api_token}".encode("utf-8")
             )
 
         def do_GET(self):
@@ -132,11 +132,18 @@ def handler(runtime: Runtime):
             if path == "/api/events":
                 if not self.authorized():
                     return self.json(401, {"error": "unauthorized"})
-                return self.json(200, {"events": runtime.store.list_events(), "stats": runtime.store.stats()})
+                try:
+                    data = {"events": runtime.store.list_events(), "stats": runtime.store.stats()}
+                except Exception:
+                    return self.json(503, {"error": "storage_unavailable"})
+                return self.json(200, data)
             if path == "/metrics":
                 if not self.authorized():
                     return self.json(401, {"error": "unauthorized"})
-                stats = runtime.store.stats()
+                try:
+                    stats = runtime.store.stats()
+                except Exception:
+                    return self.json(503, {"error": "storage_unavailable"})
                 lines = [f'syncbridge_events{{status="{k}"}} {v}' for k, v in stats.items()]
                 body = ("\n".join(lines) + "\n").encode()
                 self.send_response(200)
@@ -155,7 +162,11 @@ def handler(runtime: Runtime):
                     event_id = int(path.split("/")[3])
                 except (ValueError, IndexError):
                     return self.json(400, {"error": "invalid_event_id"})
-                if not runtime.store.retry(event_id):
+                try:
+                    retried = runtime.store.retry(event_id)
+                except Exception:
+                    return self.json(503, {"error": "storage_unavailable"})
+                if not retried:
                     return self.json(409, {"error": "event_not_retryable"})
                 return self.json(202, {"id": event_id, "status": "retry"})
             if not path.startswith("/webhooks/"):
@@ -171,18 +182,22 @@ def handler(runtime: Runtime):
                 return self.json(413, {"error": "invalid_size"})
             raw = self.rfile.read(length)
             expected = hmac.new(runtime.webhook_secret.encode(), raw, hashlib.sha256).hexdigest()
-            if not hmac.compare_digest(self.headers.get("X-SyncBridge-Signature", ""), expected):
+            signature = self.headers.get("X-SyncBridge-Signature", "")
+            if not re.fullmatch(r"[0-9a-f]{64}", signature) or not hmac.compare_digest(signature, expected):
                 return self.json(401, {"error": "invalid_signature"})
             try:
                 payload = json.loads(raw)
                 if not isinstance(payload, dict):
                     raise ValueError
-            except (json.JSONDecodeError, ValueError):
+            except (UnicodeDecodeError, ValueError):
                 return self.json(400, {"error": "invalid_json"})
             key = self.headers.get("Idempotency-Key") or hashlib.sha256(raw).hexdigest()
             if not re.fullmatch(r"[A-Za-z0-9._:-]{1,200}", key):
                 return self.json(400, {"error": "invalid_idempotency_key"})
-            event_id, created = runtime.store.ingest(source, key, payload)
+            try:
+                event_id, created = runtime.store.ingest(source, key, payload)
+            except Exception:
+                return self.json(503, {"error": "storage_unavailable"})
             return self.json(202 if created else 200, {"id": event_id, "created": created})
 
         def log_message(self, fmt, *args):
