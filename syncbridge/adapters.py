@@ -1,7 +1,31 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
+from contextlib import contextmanager
+
+
+class _RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Credentials and customer data belong only to the configured endpoint.
+        return None
+
+
+@contextmanager
+def _open_destination(req):
+    try:
+        with urllib.request.build_opener(_RejectRedirects()).open(req, timeout=20) as response:
+            if not 200 <= response.status < 300:
+                raise RuntimeError(f"destination returned HTTP {response.status}")
+            yield response
+    except urllib.error.HTTPError as exc:
+        code = exc.code
+        exc.close()
+        # Persist status only: URLs/reason phrases can contain secrets or PII.
+        raise RuntimeError(f"destination returned HTTP {code}") from None
+    except urllib.error.URLError:
+        raise RuntimeError("destination connection failed") from None
 
 
 def send_rest(url: str, token: str, payload: dict) -> None:
@@ -12,9 +36,8 @@ def send_rest(url: str, token: str, payload: dict) -> None:
         method="POST",
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
-        if not 200 <= response.status < 300:
-            raise RuntimeError(f"destination returned HTTP {response.status}")
+    with _open_destination(req):
+        pass
 
 
 def _notion_request(method: str, path: str, token: str, body: dict | None = None):
@@ -24,7 +47,7 @@ def _notion_request(method: str, path: str, token: str, body: dict | None = None
         method=method,
         headers={"Authorization": f"Bearer {token}", "Notion-Version": "2022-06-28", "Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=20) as response:
+    with _open_destination(req) as response:
         return json.loads(response.read() or b"{}")
 
 
