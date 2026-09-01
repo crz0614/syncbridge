@@ -3,6 +3,7 @@ import json
 import os
 
 from .app import serve
+from .config import init_env, load_env
 from .csv_ingest import import_csv, watch_directory
 from .mapping import FieldMap
 from .postgres_store import PostgresStore
@@ -16,7 +17,9 @@ def configured_store():
 
 def main():
     parser = argparse.ArgumentParser(prog="syncbridge")
+    parser.add_argument("--env-file", default=".env", help="literal KEY=value file; process environment takes precedence")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("init", help="create local secrets without overwriting existing configuration")
     serve_cmd = sub.add_parser("serve")
     serve_cmd.add_argument("--host", default="0.0.0.0")
     serve_cmd.add_argument("--port", type=int, default=8080)
@@ -29,6 +32,14 @@ def main():
     watch_cmd.add_argument("--interval", type=int, default=10)
     watch_cmd.add_argument("--map")
     args = parser.parse_args()
+    try:
+        if args.command == "init":
+            created = init_env(args.env_file)
+            print("Configuration created. Edit destination settings before serving." if created else "Existing configuration preserved; no changes made.")
+            return
+        load_env(args.env_file)
+    except (OSError, ValueError):
+        parser.exit(2, "Configuration could not be created or loaded; check file syntax and permissions.\n")
     if args.command == "serve":
         serve(args.host, args.port)
     elif args.command == "import-csv":
