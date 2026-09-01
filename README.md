@@ -53,6 +53,29 @@ and enter `dead` after five attempts.
 
 `/health` reports the active storage backend (`sqlite` or `postgres`), the
 selected destination adapter and whether its required configuration is present.
+It queries the active database and returns HTTP 503 with `database_ready:false`
+when that probe fails. This checks database access, not end-to-end delivery or
+all worker failure modes. Queue acquisition failures retry after an interruptible
+five-second wait without logging provider errors or connection strings. If an
+outcome write fails, the worker retries that same database operation, not the
+delivery. This also handles a lost acknowledgement after a successful commit.
+The worker pauses acquisition while recording that outcome; monitor the structured
+`queue_claim_failed` and `queue_outcome_write_failed` log events.
+
+健康接口实际查询数据库，失败时返回 HTTP 503 与 `database_ready:false`。
+这不代表目标 CRM 端到端验收，也不能检测全部工作线程故障。取队列失败后等待
+五秒再尝试，等待可被停止信号打断；不记录数据库连接串或底层异常详情。
+投递结果写入失败时，仅重试原数据库操作，不立即再次投递，也不继续领取新任务。
+这覆盖提交成功后确认丢失的情况；应监控上述两类结构化错误日志。
+
+Recovery boundary: a process crash after claiming a job, or shutdown during an
+unresolved outcome write, can still leave a `processing` event requiring
+operator reconciliation. Do not bulk replay uncertain deliveries: the destination
+may already have accepted them. Lease-based recovery remains a release gate.
+恢复边界：领取任务后崩溃、结果尚未确认写入时停止进程，仍可能留下 `processing`
+事件，需人工核对目标系统是否已接收。不要批量重放不确定状态的投递；带租约的
+恢复机制仍是待完成项。回滚可部署前一版本，不涉及数据库迁移；回滚后健康接口
+将失去实际数据库探测，监控必须另行检查数据库。
 It never returns credentials. This makes container and production checks detect
 an accidentally unconfigured destination instead of reporting a misleading
 SQLite-only status.

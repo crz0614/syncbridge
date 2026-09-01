@@ -34,9 +34,15 @@ class Runtime:
             if destination == "notion"
             else bool(os.getenv("DESTINATION_URL"))
         )
+        try:
+            self.store.stats()
+            database_ready = True
+        except Exception:
+            database_ready = False
         return {
-            "status": "ok",
+            "status": "ok" if database_ready else "degraded",
             "database": self.storage_backend,
+            "database_ready": database_ready,
             "destination": destination,
             "destination_configured": configured,
         }
@@ -50,16 +56,40 @@ class Runtime:
 
     def worker(self):
         while not self.stop.is_set():
-            event = self.store.claim()
+            try:
+                event = self.store.claim()
+            except Exception:
+                # No event was returned; retry acquisition after a bounded wait.
+                # Never include DSNs/provider exception messages in stdout.
+                print(json.dumps({"event": "queue_claim_failed", "retry_in_seconds": 5}))
+                self.stop.wait(5)
+                continue
             if not event:
                 self.stop.wait(1)
                 continue
             try:
                 raw = event["payload"]
                 self.deliver(self.mapper.apply(json.loads(raw) if isinstance(raw, str) else raw))
-                self.store.finish(event["id"])
             except Exception as exc:
-                self.store.fail(event["id"], event["attempts"] + 1, str(exc))
+                recorded = self.record_outcome(
+                    self.store.fail, event["id"], event["attempts"] + 1, str(exc)
+                )
+            else:
+                # A failed acknowledgement is not a failed delivery. Retry only
+                # the database write, never send the accepted payload again here.
+                recorded = self.record_outcome(self.store.finish, event["id"])
+            if not recorded:
+                return
+
+    def record_outcome(self, operation, *args) -> bool:
+        while True:
+            try:
+                operation(*args)
+                return True
+            except Exception:
+                print(json.dumps({"event": "queue_outcome_write_failed", "retry_in_seconds": 5}))
+                if self.stop.wait(5):
+                    return False
 
 
 def handler(runtime: Runtime):
@@ -96,7 +126,8 @@ def handler(runtime: Runtime):
             if path == "/":
                 return self.html(files("syncbridge").joinpath("dashboard.html").read_text(encoding="utf-8"))
             if path == "/health":
-                return self.json(200, runtime.health())
+                health = runtime.health()
+                return self.json(200 if health.get("status") == "ok" else 503, health)
             if path == "/api/events":
                 if not self.authorized():
                     return self.json(401, {"error": "unauthorized"})
