@@ -7,11 +7,55 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from syncbridge.cli import main
+from syncbridge.cli import configured_store, main
+from syncbridge.app import Runtime
 from syncbridge.config import init_env, load_env
 
 
 class ConfigTests(unittest.TestCase):
+    def test_explicit_missing_env_file_stops_all_commands(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = str(Path(directory) / "missing.env")
+            for command in (["serve"], ["import-csv", "input.csv"], ["watch-csv", directory]):
+                with self.subTest(command=command), patch("sys.argv", ["syncbridge", "--env-file", missing, *command]), patch("syncbridge.cli.serve") as serve, patch("syncbridge.cli.configured_store") as storage, contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as error:
+                        main()
+                    self.assertEqual(error.exception.code, 2)
+                    serve.assert_not_called()
+                    storage.assert_not_called()
+
+    def test_optional_missing_file_preserves_environment(self):
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"KEEP": "value"}, clear=True):
+            load_env(str(Path(directory) / "missing.env"))
+            self.assertEqual(dict(os.environ), {"KEEP": "value"})
+
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation may require extra privileges")
+    def test_dangling_default_symlink_is_not_silently_ignored(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory) / ".env"
+            file.symlink_to(Path(directory) / "missing-secret-file")
+            with self.assertRaises(FileNotFoundError):
+                load_env(str(file))
+
+    def test_invalid_database_url_never_opens_sqlite(self):
+        for dsn in ("mysql://user:secret@host/db", " postgres://user:secret@host/db", "not-a-url"):
+            with self.subTest(dsn=dsn), patch.dict(os.environ, {"DATABASE_URL": dsn}, clear=True), patch("syncbridge.cli.Store") as cli_store, patch("syncbridge.app.Store") as app_store:
+                for operation in (configured_store, Runtime):
+                    with self.assertRaises(ValueError) as error:
+                        operation()
+                    self.assertNotIn("secret", str(error.exception))
+                cli_store.assert_not_called()
+                app_store.assert_not_called()
+
+    def test_cli_invalid_database_url_is_safe_configuration_error(self):
+        with patch.dict(os.environ, {"DATABASE_URL": "mysql://user:private-secret@host/db"}, clear=True), patch("syncbridge.cli.load_env"), patch("syncbridge.cli.serve") as serve, patch("sys.argv", ["syncbridge", "serve"]):
+            output = io.StringIO()
+            with contextlib.redirect_stderr(output), self.assertRaises(SystemExit) as error:
+                main()
+            self.assertEqual(error.exception.code, 2)
+            self.assertNotIn("private-secret", output.getvalue())
+            serve.assert_not_called()
+
     def test_init_creates_distinct_secrets_and_never_overwrites(self):
         with tempfile.TemporaryDirectory() as directory:
             file = Path(directory) / ".env"
