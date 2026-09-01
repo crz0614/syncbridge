@@ -87,6 +87,9 @@ def verify(image):
         eventually(ready)
         uid = subprocess.check_output(["docker", "exec", name, "id", "-u"], text=True).strip()
         assert uid != "0", "container must not run as root"
+        for private_path in ("/app/.env", "/app/.git", "/app/.venv", "/app/data"):
+            subprocess.run(["docker", "exec", name, "test", "!", "-e", private_path],
+                           check=True, capture_output=True)
         try:
             request("/api/events")
             raise AssertionError("unauthenticated operator access succeeded")
