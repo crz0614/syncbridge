@@ -30,8 +30,11 @@ def verify():
         (root / "input.csv").write_text("id,name\n1,native-test-fixture\n", encoding="utf-8")
         assert json.loads(run("import-csv", "input.csv")) == {"created": 1, "duplicates": 0}
         assert json.loads(run("import-csv", "input.csv")) == {"created": 0, "duplicates": 1}
-        with sqlite3.connect(root / "native-check.db") as db:
+        db = sqlite3.connect(root / "native-check.db")
+        try:
             assert db.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 1
+        finally:
+            db.close()
         print("PASS: installed CLI init, existing configuration preserved, .env loaded, persistent CSV deduplication")
 
 
