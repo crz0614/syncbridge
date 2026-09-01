@@ -39,6 +39,9 @@ jobs:
       - name: Test WordPress connector boundaries
         run: php tests/test_wordpress_connector.php
       - run: docker build -t syncbridge:${{ github.sha }} .
+      - name: Verify built container with PostgreSQL and REST delivery
+        timeout-minutes: 3
+        run: python scripts/verify_container.py syncbridge:${{ github.sha }}
       - name: Validate Docker Compose
         run: |
           cp .env.example .env
