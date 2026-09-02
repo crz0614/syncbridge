@@ -25,6 +25,14 @@ def init_env(path: str = ".env") -> bool:
     return True
 
 
+def destination_kind() -> str:
+    """Never interpret an unknown adapter name as permission to send to REST."""
+    kind = os.getenv("SYNCBRIDGE_DESTINATION", "rest")
+    if kind not in ("rest", "notion"):
+        raise ValueError("SYNCBRIDGE_DESTINATION must be rest or notion")
+    return kind
+
+
 def database_url() -> str:
     """Reject a configured unsupported backend instead of silently using SQLite."""
     dsn = os.getenv("DATABASE_URL", "")
