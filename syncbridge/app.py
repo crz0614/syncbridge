@@ -13,13 +13,14 @@ from importlib.resources import files
 
 from .adapters import send_notion, send_rest
 from .mapping import FieldMap
-from .config import database_url
+from .config import database_url, destination_kind
 from .postgres_store import PostgresStore
 from .store import Store
 
 
 class Runtime:
     def __init__(self):
+        destination_kind()
         dsn = database_url()
         self.storage_backend = "postgres" if dsn else "sqlite"
         self.store = PostgresStore(dsn) if self.storage_backend == "postgres" else Store(os.getenv("SYNCBRIDGE_DB", "data/syncbridge.db"))
@@ -29,7 +30,7 @@ class Runtime:
         self.stop = threading.Event()
 
     def health(self) -> dict:
-        destination = os.getenv("SYNCBRIDGE_DESTINATION", "rest")
+        destination = destination_kind()
         configured = (
             bool(os.getenv("NOTION_DATABASE_ID") and os.getenv("NOTION_TOKEN"))
             if destination == "notion"
@@ -49,7 +50,7 @@ class Runtime:
         }
 
     def deliver(self, payload: dict):
-        kind = os.getenv("SYNCBRIDGE_DESTINATION", "rest")
+        kind = destination_kind()
         if kind == "notion":
             send_notion(os.environ["NOTION_DATABASE_ID"], os.environ["NOTION_TOKEN"], payload, os.getenv("NOTION_KEY_PROPERTY"))
         else:
