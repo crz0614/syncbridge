@@ -1,5 +1,38 @@
 # SyncBridge
 
+## Destination selection safety / 目标类型安全校验
+
+`SYNCBRIDGE_DESTINATION` accepts exactly `rest` or `notion`; an unset variable
+defaults to `rest`, but an explicit empty value, typo, whitespace or other value
+fails before opening storage. Invalid values are also rejected at delivery time,
+never silently routed to an existing REST endpoint. Error messages name the
+setting and allowed values without echoing the supplied value. This does not
+validate credentials, destination ownership or remote availability.
+
+目标类型只接受 `rest` 或 `notion`；未设置时保留 REST 默认值，显式空值、拼写、
+大小写或空格错误会在打开数据库前失败。投递时也执行校验，不再把错误类型静默
+当作 REST。错误信息不回显配置值；这并不验证凭据、目标归属或第三方可用性。
+
+Before upgrading, check the service environment as well as the selected .env:
+process environment overrides file values. Stop ingestion and reconcile pending
+events before intentionally changing adapters; queue records do not pin a
+destination. Correcting a typo is not authorization to replay uncertain deliveries.
+No schema migration is needed. Rollback restores the unsafe fallback: keep
+external startup validation in place and verify the intended target before restart.
+
+升级前同时检查服务环境与配置文件，进程环境优先。主动切换目标前停止接收并核对
+队列；事件本身不绑定目标，不能因修正配置便直接重放不确定的历史投递。
+无需数据库迁移。回滚会恢复旧版静默回退，须在外部保留启动校验并确认正确目标。
+
+Regression tests cover startup rejection before storage, unconfigured default
+REST, valid adapter dispatch and invalid in-process changes without outbound calls.
+They use mocks, not a real WordPress→CRM or Notion acceptance test.
+This branch change is not deployed until its PR is approved and merged.
+
+回归测试覆盖启动拒绝、默认未配置状态、合法分派与运行期非法配置不外发；
+使用受控 mock，不代表真实 WordPress→CRM 或 Notion 验收。分支修复在 PR
+批准合并前未上线。
+
 Self-hosted webhook-to-Notion/REST synchronization with durable SQLite storage,
 idempotency, retry backoff, a dead-letter state, authenticated metrics, and no
 hosted-service dependency.
