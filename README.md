@@ -33,6 +33,32 @@ Native installation is also available:
 .venv/bin/syncbridge watch-csv ./incoming --interval 10
 ```
 
+The watcher atomically moves each input before reading it, so concurrent watchers
+cannot process the same path. Successful files receive collision-free archive
+names under `.syncbridge-processed`; malformed files move to `.syncbridge-failed`
+and do not stop later inputs. Transient storage failures requeue the claimed file
+without overwriting a newer arrival. Producers must still publish complete files
+with a same-filesystem atomic rename. Review failed files before correcting and
+resubmitting them; never copy an archive back blindly.
+Archive/quarantine/retry subdirectories retain the original filename and legacy
+row keys. Stop all watchers before upgrade or rollback. A process crash or a
+filesystem error can leave `.syncbridge-processed/.inflight-*` directories;
+reconcile their original filenames and queue records, then move the intact
+directory to `.syncbridge-retry/<unique-id>` to resume. Never recover files while
+another watcher owns them. Older versions do not read the retry directory: drain
+or manually reconcile it before rollback. No automatic stale-claim recovery or
+exactly-once external delivery is claimed.
+
+目录监听会先原子移动再读取，同一路径不会被多个监听进程同时处理。成功文件以
+不会覆盖的名称归档到 `.syncbridge-processed`；格式错误进入 `.syncbridge-failed`
+且不阻塞后续文件；数据库短暂故障会安全重排队，不覆盖刚到达的同名文件。
+生产方仍须在同一文件系统内用原子重命名发布完整文件。修正后再重新提交失败文件，
+不要盲目把归档复制回输入目录。
+归档、隔离和重试子目录保留原文件名及旧行幂等键。升级/回滚前停止全部监听进程。
+进程崩溃或文件系统错误可能留下 `.syncbridge-processed/.inflight-*`；确认无进程
+仍占用并核对队列后，将整个目录移至 `.syncbridge-retry/<唯一编号>` 续传。
+旧版不读取重试目录，回滚前须清空或人工核对；不宣称自动恢复失效占用或恰好一次投递。
+
 On Windows, replace `.venv/bin/syncbridge` with
 `.\.venv\Scripts\syncbridge.exe`. The installer preserves an existing `.env`
 and never creates a world-readable placeholder configuration.
@@ -140,8 +166,9 @@ This is format preflight, not an all-or-nothing database transaction. A database
 failure during ingestion may leave a committed prefix; retry the unchanged file
 at the same path with the same mapping/source to resume by deduplication. Do not
 modify an input while it is being read; producers must write a temporary file and
-atomically publish the finished `.csv`. Directory-watcher concurrency and archive
-collisions remain unverified. Rollback needs no schema migration but restores
+atomically publish the finished `.csv`. Watcher claim, archive collision and retry
+tests cover these paths; crash recovery still requires reconciliation as above.
+Rollback needs no schema migration but restores
 permissive parsing; keep the stricter input validation upstream if rolling back.
 
 CSV 会在首次写队列前校验整份文件，拒绝空/重复列名、缺列/多列、非法 UTF-8
@@ -151,7 +178,8 @@ BOM、空行、引号内逗号和多行文本。
 
 这仅保证格式预检，不是整个导入的数据库事务；入库期间故障可能已提交部分行，
 应在相同路径、映射和来源下重试原文件，利用去重续传。生产方必须先写临时文件，
-完成后原子发布为 `.csv`，不能边写边导入。目录监听并发与归档重名仍待验证。
+完成后原子发布为 `.csv`，不能边写边导入。领取并发、归档重名和重试路径有回归测试；
+进程崩溃后的恢复仍须按前述说明人工核对。
 回滚无需迁移数据库，但会恢复宽松解析，须在上游保留严格校验。
 
 An installable WordPress connector is included in
